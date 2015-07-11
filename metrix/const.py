@@ -1,0 +1,5 @@
+DB_TYPE_MYSQL = 'mysql'
+DB_TYPE_SQLLITE = 'sqlite'
+TYPE_INT = 'int'
+TYPE_FLOAT = 'float'
+TYPE_STRING = 'string'

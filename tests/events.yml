@@ -1,0 +1,15 @@
+---
+
+meta:
+    number_columns: 6
+    string_columns: 6
+
+common_properties:
+    user_id: int
+    platform: ['iOS', 'Android']
+     
+events:
+    user_created:
+        gender: ['Female', 'Male']
+        first_name: string
+        last_name: string
