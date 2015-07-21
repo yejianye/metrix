@@ -1,5 +1,7 @@
 Metrix - A tools for metrics event collecting and analysis
 ==========================================================
+*This project is still under development, and is not ready for release...*
+
 We all know how important it is to log user events and analyze them to support product decisions. Metrix is an open source alternative to metrics analytics platform such as Mixpanel. At Slide Inc and Glow Inc, we've been building our internal metrics system for years. I think it would be benefical to open source those technologies.
 
 Features
