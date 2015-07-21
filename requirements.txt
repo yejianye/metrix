@@ -1,0 +1,4 @@
+gevent
+PyYAML
+repoze.lru
+sqlalchemy

@@ -1,0 +1,157 @@
+* Architecture
+** Collector
+The collector has 2 components, a HTTP interface and a long-running thread that insert events collected into backend storage, such as a MySQL database. The reason there's a dedicated thread for writing is to batch DB writing and avoid too many concurrent DB connections.
+*** Collector Configuration
+It's a yaml-format config file defines
+- HTTP server binding address
+- Connection string for one or multiple backend DB storage 
+- File path for event configuration file
+
+Example:
+#+begin_src yaml
+bind: 0.0.0.0
+port: 11811
+databases:
+  - mysql://user:password@db1.example.com:3336/event_db
+  - mysql://user:password@db2.example.com:3336/event_db
+event_schema: tests/events.yml
+#+end_src
+
+** Events Storage
+*** Event Configuration
+This file define the schema of events including
+- Max number of custom properties for each type in an event (under ~meta~)
+- Common properties shared by all events (under ~common_properties~)
+- Property definition of each event (under ~events~)
+  
+Example:
+#+begin_src yaml
+---
+meta:
+    number_columns: 6
+    string_columns: 6
+
+common_properties:
+    user_id: int
+    platform: ['iOS', 'Android']
+     
+events:
+    user_created:
+        gender: ['Female', 'Male']
+        first_name: string
+        last_name: string
+#+end_src
+
+*** Events Table
+By default, we will generate one event table per day. But we should make the event table name configurable, so that people could config how to partition the event tables, by hour, day, month or year. That should really be depend on the data volume the user needs to deal with.
+#+begin_src sql
+  CREATE TABLE `events_YYYMMDD` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `event_time` bigint(20) NOT NULL,
+  `event_name` varchar(255) NOT NULL,
+  "------COMMON PROPERTIES------
+  `user_id` bigint(20),
+  `platform` tinyint(4),
+  `app_version` varchar(20),
+  `ip_address` varchar(20),
+  `device_id` bigint(20),
+  "------ENUM AND NUMBERS------
+  `int_1` bigint(20),
+  `int_2` bigint(20),
+  `int_3` bigint(20),
+  `int_4` bigint(20),
+  `int_5` bigint(20),
+  `int_6` bigint(20),
+  "------STRINGS------
+  `text_1` varchar(255),
+  `text_2` varchar(255),
+  `text_3` varchar(255),
+  PRIMARY KEY (`id`),
+  KEY `idx_event_id` (`event_time`, `event_id`),
+  KEY `idx_event_and_platform` (`event_time`, `event_id`, `platform`),
+  KEY `idx_event_and_version` (`event_time`, `event_id`, `version`),
+  KEY `idx_user` (`user_id`),
+  );
+#+end_src
+
+*** Meta Table
+Schema definition:
+#+begin_src sql
+  CREATE TABLE `event_mapping` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `event_name` varchar(255) NOT NULL,
+  `property` varchar(255) NOT NULL,
+  `column_name` varchar(255) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_event_name` (`event_name`),
+  );
+#+end_src
+
+Example:
+| event_name   | property | column_name |
+|--------------+----------+-------------|
+| user_created | int_1    | gender      |
+| user_created | int_2    | age         |
+| user_created | string_1 | locale      |
+
+** Scalability
+When talking about scalability, we should separate 2 components, *Collector* & *DB storage*.
+
+Collector is just a HTTP server and could be scale horizontally through a load balancer. 
+
+Adding more DB instances is straight-forward as well. Just adding their connection string to ~databases~ key in config file. When inserting a new event, the collector will randomly pick a DB out of all available databases.
+
+** End-user experience
+The user creates a config file for collector ~collector.conf~ (with YAML format or ini format), which contains database config as well as a package name for event definition.
+
+User could start the server as a daemon or use a process manager like supervisord
+
+#+begin_src bash
+metrix_collector --conf metrix.conf
+metrix_analyzer --conf metrix.conf
+#+end_src
+
+To send events
+
+#+begin_src python
+from metrix.api import event
+
+event.init(host='localhost', port=10877)
+event.send(event_or_list)
+# Send single event
+event.send({
+     'event_name': xxx
+     'attr1': yyy
+})
+# Send multiple events
+event.send([
+    {'event_name': xxx1, 'attr1': yyy1},
+    {'event_name': xxx2, 'attr2': yyy2},
+    ...
+])
+#+end_src
+
+To use analytics API
+
+#+begin_src python
+from metrix.api import analytics
+analytics.init(host='localhost', port=10878)
+analytics.count(event_name, start_date, end_date ...)
+#+end_src
+
+You need to modify common properties or change the maximum number of other properties. You need update config file and restart collector. And then you will need migrate existing table schemas with
+
+#+begin_src bash
+metrix_update_schema --conf metrix.conf
+#+end_src
+
+* v0.1 release
+** Features
+- Restful API for collector and analyzer
+- Basic API for analyzing including count, unique, group, retention etc (Reference: Mixpanel Data API)
+- Support horizontal scale of backend storage. New shard could be added, and a tool for re-sharding is provided
+
+** Not in scope
+- Direct TCP or UDP support for collector. Might support in feature release.
+- Dashboard or visualization. You need build your own with Analyzer API
+- Unlimited number of properties. Due to internal design of Metrix, there will always be a limitation for total number of properties. But the limit is configurable.
